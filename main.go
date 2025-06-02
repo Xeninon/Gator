@@ -1,20 +1,32 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
+	"github.com/Xeninon/Gator/internal/database"
+
 	"github.com/Xeninon/Gator/internal/config"
+	_ "github.com/lib/pq"
 )
 
 func main() {
-	configs, err := config.Read()
+	cfg, err := config.Read()
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	db, err := sql.Open("postgres", cfg.Db_url)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	dbQueries := database.New(db)
 	currentState := state{
-		&configs,
+		dbQueries,
+		&cfg,
 	}
 
 	cmds := commands{
@@ -22,6 +34,7 @@ func main() {
 	}
 
 	cmds.register("login", handlerLogin)
+	cmds.register("register", handlerRegister)
 	if len(os.Args) < 2 {
 		fmt.Println("no command given")
 		os.Exit(1)

@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/Xeninon/Gator/internal/database"
+	"github.com/google/uuid"
 
 	"github.com/Xeninon/Gator/internal/config"
 )
 
 type state struct {
-	config *config.Config
+	db  *database.Queries
+	cfg *config.Config
 }
 
 type command struct {
@@ -43,10 +49,38 @@ func handlerLogin(s *state, cmd command) error {
 		return errors.New("username is required")
 	}
 
-	if err := s.config.SetUser(cmd.arguments[0]); err != nil {
+	user, err := s.db.GetUser(context.Background(), cmd.arguments[0])
+	if err != nil {
+		return errors.New("username is not registered")
+	}
+
+	if err := s.cfg.SetUser(user.Name); err != nil {
 		return err
 	}
 
-	fmt.Println("user has been set to " + s.config.Current_user_name)
+	fmt.Println("user has been set to " + user.Name)
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.arguments) == 0 {
+		return errors.New("name is required")
+	}
+
+	user, err := s.db.CreateUser(
+		context.Background(),
+		database.CreateUserParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Name:      cmd.arguments[0],
+		},
+	)
+	if err != nil {
+		return errors.New("username is taken")
+	}
+
+	s.cfg.SetUser(user.Name)
+	fmt.Printf("User was created with info:%v\n", user)
 	return nil
 }
