@@ -146,6 +146,17 @@ func handlerAddfeed(s *state, cmd command) error {
 		return errors.New("url already in database")
 	}
 
+	s.db.CreateFeedFollow(
+		context.Background(),
+		database.CreateFeedFollowParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			UserID:    user.ID,
+			FeedID:    feed.ID,
+		},
+	)
+
 	fmt.Printf("Feed was created with info:%v\n", feed)
 	return nil
 }
@@ -160,5 +171,50 @@ func handlerFeeds(s *state, cmd command) error {
 		fmt.Printf("feed: %v, url: %v, creator: %v\n", feed.Name, feed.Url, feed.Creator)
 	}
 
+	return nil
+}
+
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.arguments) < 1 {
+		return errors.New("url required")
+	}
+
+	user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
+	if err != nil {
+		return errors.New("account not registered in database")
+	}
+
+	feed, err := s.db.GetFeedForURL(context.Background(), cmd.arguments[0])
+	if err != nil {
+		return errors.New("feed not in database")
+	}
+
+	feedFollow, err := s.db.CreateFeedFollow(
+		context.Background(),
+		database.CreateFeedFollowParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			UserID:    user.ID,
+			FeedID:    feed.ID,
+		},
+	)
+	if err != nil {
+		return errors.New("already following feed")
+	}
+
+	fmt.Println(feedFollow.UserName + "now following" + feedFollow.FeedName)
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command) error {
+	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), s.cfg.Current_user_name)
+	if err != nil {
+		return err
+	}
+
+	for _, feedFollow := range feedFollows {
+		fmt.Println(feedFollow.FeedName)
+	}
 	return nil
 }
