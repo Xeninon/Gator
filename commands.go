@@ -120,3 +120,45 @@ func handlerAgg(s *state, cmd command) error {
 	fmt.Println(feed)
 	return nil
 }
+
+func handlerAddfeed(s *state, cmd command) error {
+	if len(cmd.arguments) < 2 {
+		return errors.New("name and url required")
+	}
+
+	user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
+	if err != nil {
+		return errors.New("account not registered in database")
+	}
+
+	feed, err := s.db.CreateFeed(
+		context.Background(),
+		database.CreateFeedParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Name:      cmd.arguments[0],
+			Url:       cmd.arguments[1],
+			UserID:    user.ID,
+		},
+	)
+	if err != nil {
+		return errors.New("url already in database")
+	}
+
+	fmt.Printf("Feed was created with info:%v\n", feed)
+	return nil
+}
+
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+
+	for _, feed := range feeds {
+		fmt.Printf("feed: %v, url: %v, creator: %v\n", feed.Name, feed.Url, feed.Creator)
+	}
+
+	return nil
+}

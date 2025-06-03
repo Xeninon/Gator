@@ -38,6 +38,8 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddfeed)
+	cmds.register("feeds", handlerFeeds)
 	if len(os.Args) < 2 {
 		fmt.Println("no command given")
 		os.Exit(1)
