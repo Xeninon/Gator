@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -112,23 +113,28 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
-	if err != nil {
-		return err
+	if len(cmd.arguments) < 1 {
+		return errors.New("duration string required")
 	}
 
-	fmt.Println(feed)
-	return nil
+	timeBetweenRequests, err := time.ParseDuration(cmd.arguments[0])
+	if err != nil {
+		return errors.New("requires valid duration string")
+	}
+
+	fmt.Println("Collecting feeds every " + timeBetweenRequests.String())
+	ticker := time.NewTicker(timeBetweenRequests)
+	for ; ; <-ticker.C {
+		err = scrapeFeeds(s)
+		if err != nil {
+			return err
+		}
+	}
 }
 
-func handlerAddfeed(s *state, cmd command) error {
+func handlerAddfeed(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 2 {
 		return errors.New("name and url required")
-	}
-
-	user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
-	if err != nil {
-		return errors.New("account not registered in database")
 	}
 
 	feed, err := s.db.CreateFeed(
@@ -174,14 +180,9 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 1 {
 		return errors.New("url required")
-	}
-
-	user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
-	if err != nil {
-		return errors.New("account not registered in database")
 	}
 
 	feed, err := s.db.GetFeedForURL(context.Background(), cmd.arguments[0])
@@ -207,8 +208,8 @@ func handlerFollow(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {
-	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), s.cfg.Current_user_name)
+func handlerFollowing(s *state, cmd command, user database.User) error {
+	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		return err
 	}
@@ -216,5 +217,70 @@ func handlerFollowing(s *state, cmd command) error {
 	for _, feedFollow := range feedFollows {
 		fmt.Println(feedFollow.FeedName)
 	}
+	return nil
+}
+
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.arguments) < 1 {
+		return errors.New("url required")
+	}
+
+	err := s.db.DeleteFeedFollow(
+		context.Background(),
+		database.DeleteFeedFollowParams{
+			UserID: user.ID,
+			Url:    cmd.arguments[0],
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
+		if err != nil {
+			return errors.New("account not registered in database")
+		}
+
+		if err := handler(s, cmd, user); err != nil {
+			return err
+		}
+
+		return nil
+	}
+}
+
+func scrapeFeeds(s *state) error {
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+
+	s.db.MarkFeedFetched(
+		context.Background(),
+		database.MarkFeedFetchedParams{
+			ID: feed.ID,
+			LastFetchedAt: sql.NullTime{
+				Time:  time.Now(),
+				Valid: true,
+			},
+		},
+	)
+
+	rss, err := fetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(" - " + feed.Name)
+	for _, item := range rss.Channel.Item {
+		fmt.Println(" | " + item.Title)
+	}
+
+	fmt.Println("")
 	return nil
 }
