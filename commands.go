@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Xeninon/Gator/internal/database"
@@ -239,6 +241,34 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	if len(cmd.arguments) == 0 {
+		cmd.arguments[0] = "2"
+	}
+
+	limit, err := strconv.Atoi(cmd.arguments[0])
+	if err != nil {
+		return errors.New("provided argument isn't an integer")
+	}
+
+	posts, err := s.db.GetPostsForUser(
+		context.Background(),
+		database.GetPostsForUserParams{
+			UserID: user.ID,
+			Limit:  int32(limit),
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, post := range posts {
+		fmt.Println(post.Title)
+		fmt.Println("| " + post.Url)
+	}
+	return nil
+}
+
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(s *state, cmd command) error {
 		user, err := s.db.GetUser(context.Background(), s.cfg.Current_user_name)
@@ -276,11 +306,31 @@ func scrapeFeeds(s *state) error {
 		return err
 	}
 
-	fmt.Println(" - " + feed.Name)
 	for _, item := range rss.Channel.Item {
-		fmt.Println(" | " + item.Title)
+		pubdate, err := time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		err = s.db.CreatePost(
+			context.Background(),
+			database.CreatePostParams{
+				ID:          uuid.New(),
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+				Title:       item.Title,
+				Url:         item.Link,
+				Description: item.Description,
+				PublishedAt: pubdate,
+				FeedID:      feed.ID,
+			},
+		)
+		if err != nil {
+			if !strings.Contains(err.Error(), "duplicate key") {
+				fmt.Println(err)
+			}
+		}
 	}
 
-	fmt.Println("")
 	return nil
 }
